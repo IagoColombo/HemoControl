@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="HemoControl.Core/HemoControl.Core.csproj" />
+  <Project Path="HemoControl.Api/HemoControl.Api.csproj" />
+</Solution>
