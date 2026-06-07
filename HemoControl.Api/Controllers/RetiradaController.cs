@@ -1,48 +1,35 @@
-using HemoControl.Core.Models;
-using HemoControl.Core.Services;
+using HemoControl.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
-namespace HemoControl.Api.Controllers
+namespace HemoControl.Controllers
 {
     [Route("api/[controller]")]
-    public class RetiradaController : ControllerBase
+    public class RetiradaController(AppDbContext db) : ControllerBase
     {
-        private readonly RetiradaService service;
-        private readonly PacienteService pacienteService;
-
-        public RetiradaController(RetiradaService service, PacienteService pacienteService)
-        {
-            this.service = service;
-            this.pacienteService = pacienteService;
-        }
-
         [HttpGet]
-        public IActionResult Get()
-        {
-            return Ok(service.Listar());
-        }
+        public IActionResult Get() => Ok(db.Retiradas.Include(r => r.Paciente).ToList());
 
         [HttpGet("{id}")]
         public IActionResult Get(int id)
         {
-            var retirada = service.BuscarId(id);
-            if (retirada == null) return NotFound();
-            return Ok(retirada);
-        }
-
-        [HttpGet("{id}/proxima-retirada")]
-        public IActionResult ProximaRetirada(int id)
-        {
-            var resultado = service.CalcularProximaRetirada(id);
-            if (resultado == null) return NotFound();
-            return Ok(resultado);
+            var r = db.Retiradas.Include(r => r.Paciente).FirstOrDefault(r => r.Id == id);
+            return r == null ? NotFound() : Ok(r);
         }
 
         [HttpPost]
         public IActionResult Post([FromBody] RetiradaRequest req)
         {
-            var paciente = pacienteService.BuscarId(req.PacienteId);
-            if (paciente == null) return BadRequest("Paciente não encontrado.");
+            if (db.Pacientes.Find(req.PacienteId) is not Paciente paciente)
+                return BadRequest("Paciente não encontrado.");
+
+            
+            var jaExiste = db.Retiradas.Any(r =>
+                r.Paciente.Id == req.PacienteId &&
+                r.DataRetirada.Date == req.DataRetirada.Date);
+
+            if (jaExiste)
+                return BadRequest("Já existe uma retirada para este paciente nesta data.");
 
             var retirada = new Retirada
             {
@@ -52,38 +39,44 @@ namespace HemoControl.Api.Controllers
                 Paciente     = paciente
             };
 
-            var sucesso = service.Criar(retirada, out var erros);
-            if (!sucesso) return BadRequest(erros);
+            db.Retiradas.Add(retirada);
+            db.SaveChanges();
             return Ok(retirada);
         }
 
         [HttpPut("{id}")]
         public IActionResult Put(int id, [FromBody] RetiradaRequest req)
         {
-            var retirada = service.BuscarId(id);
+            var retirada = db.Retiradas.Include(r => r.Paciente).FirstOrDefault(r => r.Id == id);
             if (retirada == null) return NotFound();
 
-            var paciente = pacienteService.BuscarId(req.PacienteId);
-            if (paciente == null) return BadRequest("Paciente não encontrado.");
+            if (db.Pacientes.Find(req.PacienteId) is not Paciente paciente)
+                return BadRequest("Paciente não encontrado.");
 
             retirada.DataRetirada = req.DataRetirada;
             retirada.QuantidadeUI = req.QuantidadeUI;
             retirada.Hemocentro   = req.Hemocentro;
             retirada.Paciente     = paciente;
 
-            var sucesso = service.Atualizar(retirada, out var erros);
-            if (!sucesso) return BadRequest(erros);
+            db.SaveChanges();
             return Ok(retirada);
         }
 
         [HttpDelete("{id}")]
         public IActionResult Delete(int id)
         {
-            var sucesso = service.Excluir(id);
-            if (!sucesso) return NotFound();
+            if (db.Retiradas.Find(id) is not Retirada r) return NotFound();
+            db.Retiradas.Remove(r);
+            db.SaveChanges();
             return Ok();
         }
     }
 
-    public record RetiradaRequest(int PacienteId, DateTime DataRetirada, decimal QuantidadeUI, string Hemocentro);
+    public class RetiradaRequest
+    {
+        public int PacienteId { get; set; }
+        public DateTime DataRetirada { get; set; }
+        public decimal QuantidadeUI { get; set; }
+        public string Hemocentro { get; set; } = "";
+    }
 }
