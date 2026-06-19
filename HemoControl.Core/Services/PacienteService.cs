@@ -21,6 +21,27 @@ namespace HemoControl.Core.Services
             return erros.Count == 0;
         }
 
+        public object Listar(string? nome, string? cpf, int page, int pageSize)
+        {
+            var query = context.Pacientes.AsQueryable();
+
+            if (!string.IsNullOrEmpty(nome))
+                query = query.Where(p => p.Nome.Contains(nome));
+
+            if (!string.IsNullOrEmpty(cpf))
+                query = query.Where(p => p.Cpf.Contains(cpf));
+
+            var total = query.Count();
+            var pacientes = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            return new { total, page, pageSize, pacientes };
+        }
+
+        public Paciente? BuscarId(int id)
+        {
+            return context.Pacientes.Where(p => p.Id == id).FirstOrDefault();
+        }
+
         public bool Criar(Paciente paciente, out List<ValidationResult> erros)
         {
             if (!Validar(paciente, out erros))
@@ -39,16 +60,6 @@ namespace HemoControl.Core.Services
             context.Pacientes.Update(paciente);
             context.SaveChanges();
             return true;
-        }
-
-        public List<Paciente> Listar()
-        {
-            return context.Pacientes.ToList();
-        }
-
-        public Paciente? BuscarId(int id)
-        {
-            return context.Pacientes.Where(p => p.Id == id).FirstOrDefault();
         }
 
         public bool Excluir(int id)
