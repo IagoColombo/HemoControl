@@ -1,39 +1,32 @@
-using HemoControl.Models;
+using HemoControl.Core.Models;
+using HemoControl.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HemoControl.Controllers
 {
     [Route("api/[controller]")]
-    public class PacienteController(AppDbContext db) : ControllerBase
+    public class PacienteController : ControllerBase
     {
-        [HttpGet]
-        public IActionResult Get(string? nome, string? cpf, int page = 1, int pageSize = 10)
+        private readonly PacienteService service;
+
+        public PacienteController(PacienteService service)
         {
-            var query = db.Pacientes.AsQueryable();
-
-            
-            if (!string.IsNullOrEmpty(nome))
-                query = query.Where(p => p.Nome.Contains(nome));
-
-            
-            if (!string.IsNullOrEmpty(cpf))
-                query = query.Where(p => p.Cpf.Contains(cpf));
-
-            
-            var total = query.Count();
-            var pacientes = query.Skip((page - 1) * pageSize).Take(pageSize).ToList();
-
-            return Ok(new { total, page, pageSize, pacientes });
+            this.service = service;
         }
 
+        [HttpGet]
+        public IActionResult Get(string? nome, string? cpf, int page = 1, int pageSize = 10)
+            => Ok(service.Listar(nome, cpf, page, pageSize));
+
         [HttpGet("{id}")]
-        public IActionResult Get(int id) => db.Pacientes.Find(id) is Paciente p ? Ok(p) : NotFound();
+        public IActionResult Get(int id)
+            => service.BuscarId(id) is Paciente p ? Ok(p) : NotFound();
 
         [HttpPost]
         public IActionResult Post([FromBody] Paciente paciente)
         {
-            db.Pacientes.Add(paciente);
-            db.SaveChanges();
+            if (!service.Criar(paciente, out var erros))
+                return BadRequest(erros.Select(e => e.ErrorMessage));
             return Ok(paciente);
         }
 
@@ -41,18 +34,13 @@ namespace HemoControl.Controllers
         public IActionResult Put(int id, [FromBody] Paciente paciente)
         {
             paciente.Id = id;
-            db.Pacientes.Update(paciente);
-            db.SaveChanges();
+            if (!service.Atualizar(paciente, out var erros))
+                return BadRequest(erros.Select(e => e.ErrorMessage));
             return Ok(paciente);
         }
 
         [HttpDelete("{id}")]
         public IActionResult Delete(int id)
-        {
-            if (db.Pacientes.Find(id) is not Paciente p) return NotFound();
-            db.Pacientes.Remove(p);
-            db.SaveChanges();
-            return Ok();
-        }
+            => service.Excluir(id) ? Ok() : NotFound();
     }
 }
