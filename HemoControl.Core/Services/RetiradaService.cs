@@ -22,26 +22,6 @@ namespace HemoControl.Core.Services
             return erros.Count == 0;
         }
 
-        public bool Criar(Retirada retirada, out List<ValidationResult> erros)
-        {
-            if (!Validar(retirada, out erros))
-                return false;
-
-            context.Retiradas.Add(retirada);
-            context.SaveChanges();
-            return true;
-        }
-
-        public bool Atualizar(Retirada retirada, out List<ValidationResult> erros)
-        {
-            if (!Validar(retirada, out erros))
-                return false;
-
-            context.Retiradas.Update(retirada);
-            context.SaveChanges();
-            return true;
-        }
-
         public List<Retirada> Listar()
         {
             return context.Retiradas.Include(r => r.Paciente).ToList();
@@ -50,6 +30,80 @@ namespace HemoControl.Core.Services
         public Retirada? BuscarId(int id)
         {
             return context.Retiradas.Include(r => r.Paciente).Where(r => r.Id == id).FirstOrDefault();
+        }
+
+        public bool Criar(RetiradaRequest req, out string? erro)
+        {
+            erro = null;
+
+            var paciente = context.Pacientes.Find(req.PacienteId);
+            if (paciente == null)
+            {
+                erro = "Paciente não encontrado.";
+                return false;
+            }
+
+            
+            var jaExiste = context.Retiradas.Any(r =>
+                r.Paciente.Id == req.PacienteId &&
+                r.DataRetirada.Date == req.DataRetirada.Date);
+
+            if (jaExiste)
+            {
+                erro = "Já existe uma retirada para este paciente nesta data.";
+                return false;
+            }
+
+            var retirada = new Retirada
+            {
+                DataRetirada = req.DataRetirada,
+                QuantidadeUI = req.QuantidadeUI,
+                Hemocentro   = req.Hemocentro,
+                Paciente     = paciente
+            };
+
+            if (!Validar(retirada, out var erros))
+            {
+                erro = string.Join(", ", erros.Select(e => e.ErrorMessage));
+                return false;
+            }
+
+            context.Retiradas.Add(retirada);
+            context.SaveChanges();
+            return true;
+        }
+
+        public bool Atualizar(int id, RetiradaRequest req, out string? erro)
+        {
+            erro = null;
+
+            var retirada = BuscarId(id);
+            if (retirada == null)
+            {
+                erro = "Retirada não encontrada.";
+                return false;
+            }
+
+            var paciente = context.Pacientes.Find(req.PacienteId);
+            if (paciente == null)
+            {
+                erro = "Paciente não encontrado.";
+                return false;
+            }
+
+            retirada.DataRetirada = req.DataRetirada;
+            retirada.QuantidadeUI = req.QuantidadeUI;
+            retirada.Hemocentro   = req.Hemocentro;
+            retirada.Paciente     = paciente;
+
+            if (!Validar(retirada, out var erros))
+            {
+                erro = string.Join(", ", erros.Select(e => e.ErrorMessage));
+                return false;
+            }
+
+            context.SaveChanges();
+            return true;
         }
 
         public bool Excluir(int id)
@@ -61,33 +115,14 @@ namespace HemoControl.Core.Services
             context.SaveChanges();
             return true;
         }
+    }
 
-        public object? CalcularProximaRetirada(int id)
-        {
-            var retirada = BuscarId(id);
-            if (retirada == null) return null;
-
-            var paciente = retirada.Paciente;
-            int totalDoses = paciente.DosePrescrita > 0
-                ? (int)Math.Floor(retirada.QuantidadeUI / paciente.DosePrescrita)
-                : 0;
-
-            int diasCobertura = paciente.AplicacoesPorSemana > 0
-                ? (int)Math.Ceiling(totalDoses / (double)paciente.AplicacoesPorSemana * 7)
-                : 0;
-
-            var proxima = retirada.DataRetirada.AddDays(diasCobertura);
-            int diasRestantes = (int)(proxima - DateTime.Today).TotalDays;
-
-            return new
-            {
-                paciente        = paciente.Nome,
-                totalDoses,
-                diasCobertura,
-                proximaRetirada = proxima.ToString("dd/MM/yyyy"),
-                diasRestantes,
-                atrasado        = diasRestantes < 0
-            };
-        }
+    
+    public class RetiradaRequest
+    {
+        public int PacienteId { get; set; }
+        public DateTime DataRetirada { get; set; }
+        public decimal QuantidadeUI { get; set; }
+        public string Hemocentro { get; set; } = "";
     }
 }
